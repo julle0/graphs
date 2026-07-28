@@ -56,7 +56,7 @@ def adj_matrix_gen(c, d, n):
 
         # Find whether there are enough columns to fulfill the row weight requirement
         if len(available) < c:
-            continue
+            raise ValueError('Not enough available columns')
 
         # Creating the first row
         if i == 0:
