@@ -35,7 +35,7 @@ def decompose_p(p):
         if count == 3:  # count == 3 is the only relevant solution since p is a prime, so count == 4 is impossible
             sol_list = sorted(sol, key = lambda x: 1 - x%2) # sort by odd and even numbers, odd first for a
             for perm in set(permutations(sol_list[1:])):  # permutate the last 3 indices while keeping the first one the same since it is the odd a
-                # this sign implementation (38-42) was essentially directly copied from claude, i had no idea how to do it
+                # this sign implementation (39-42) was essentially directly copied from claude, i had no idea how to do it
                 nonzero_ind = [i for i, v in enumerate(perm) if v != 0]  # find the nonzero indices
                 for sign in product([1,-1], repeat = len(nonzero_ind)):  # solution may include negative numbers, so iterate over multiplying by 1 or -1
                     perm_list = list(perm)  # permutations() returns a tuple, but it is convenient to turn this into a list
@@ -45,30 +45,32 @@ def decompose_p(p):
                     solutions.append(perm_list)  # append to solutions
     return solutions
 
-def generate_S(solutions, u, p, q):
-    rescale_const = p**(-1/2) % q
+# find the elements of S
+def generate_S(solutions, u, q):  
     S = []
     for sol in solutions:
         v = np.zeros((2,2))
-        v[0,0] += rescale_const*(sol[0] + u*sol[1]) % q
-        v[0,1] += rescale_const*(sol[2] + u*sol[3]) % q
-        v[1,0] += rescale_const*(-sol[2] + u*sol[3]) % q
-        v[1,1] += rescale_const*(sol[0] - u*sol[1]) % q
+        v[0,0] += (sol[0] + u*sol[1]) % q
+        v[0,1] += (sol[2] + u*sol[3]) % q
+        v[1,0] += (-sol[2] + u*sol[3]) % q
+        v[1,1] += (sol[0] - u*sol[1]) % q
         S.append(v)
     return S
 
+# generate G = PSL(2, F_q)
 def generate_G(q):
-    G = []
-    for i in range(q**4):
-        digits = []
-        while i:
+    G = []  # elements of G need to have determinant = 1 and an entry's inverse mod q may not be present,
+    seen = []  # or in other words, all of PSL(2, F_q) modulo +-the identity matrix
+    for i in range(q**4):  # PSL(2,F_q) contains all 2x2 matrices with entries in F_q, so q**4 unique matrices
+        digits = []  # turn base 10 integers in q**4 into base q representation
+        while i:  # this loop is based on one i found on stackexchange 
             digits.append(int(i % q))
             i //= q
-        if len(digits) < 4:
+        if len(digits) < 4:  # pad out shorter digits with zeros since we always need 4 matrix entries (currently handled as lists/tuples)
             for _ in range(4-len(digits)):
                 digits.append(0)
-        if (digits[0]*digits[3]-digits[1]*digits[2]) % q == 1:
-            G.append(digits)
-    return G
-# ADD: mod(+-Id)
-print(len(generate_G(17)))
+        if (digits[0]*digits[3]-digits[1]*digits[2]) % q == 1:  # enforce the det = 1 condition
+            seen.append(tuple(digits))  # seen represents all of PSL(2, F_q) with det = 1
+    for dts in seen:  # reducing the list so, that each matrix and its inverse pair gets turned into a pair of either itself or its inverse
+         G.append(min(dts, tuple((-x)%q for x in dts)))  # deterministically pick either the original or the inverse, now governed by taking min() of two tuples
+    return list(set(G))  # dedupe the list so we are left with mod +-identity. this final list should have q(q^2-1)/2 elements.
