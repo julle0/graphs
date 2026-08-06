@@ -35,7 +35,7 @@ def decompose_p(p):
         if count == 3:  # count == 3 is the only relevant solution since p is a prime, so count == 4 is impossible
             sol_list = sorted(sol, key = lambda x: 1 - x%2) # sort by odd and even numbers, odd first for a
             for perm in set(permutations(sol_list[1:])):  # permutate the last 3 indices while keeping the first one the same since it is the odd a
-                # this sign implementation (39-42) was essentially directly copied from claude, i had no idea how to do it
+                # this sign implementation (39-43) was essentially directly copied from claude, i had no idea how to do it
                 nonzero_ind = [i for i, v in enumerate(perm) if v != 0]  # find the nonzero indices
                 for sign in product([1,-1], repeat = len(nonzero_ind)):  # solution may include negative numbers, so iterate over multiplying by 1 or -1
                     perm_list = list(perm)  # permutations() returns a tuple, but it is convenient to turn this into a list
@@ -74,3 +74,35 @@ def generate_G(q):
     for dts in seen:  # reducing the list so, that each matrix and its inverse pair gets turned into a pair of either itself or its inverse
          G.append(min(dts, tuple((-x)%q for x in dts)))  # deterministically pick either the original or the inverse, now governed by taking min() of two tuples
     return list(set(G))  # dedupe the list so we are left with mod +-identity. this final list should have q(q^2-1)/2 elements.
+
+def generate_edges(G,S,q, explicitness):
+    E = []
+    explicit_E = []
+    if explicitness not in [0,1]:
+        raise ValueError('Explicitness not in [0,1], bad value for true/false')
+    for i in range(len(G)):
+        G[i] = np.reshape(np.array(G[i]), (2,2))
+    if explicitness == 0: 
+        for s_matrix in S:
+            for g_matrix in G:
+                E.append((g_matrix, s_matrix))
+        return E
+    elif explicitness == 1:
+        for s_matrix in S:
+            for g_matrix in G:
+                explicit_E.append(((0,g_matrix),(1, (s_matrix @ g_matrix) % q)))
+        return explicit_E
+
+def main():
+    primes = prime_finder(10)
+    p = primes[0]
+    q = primes[1]
+
+    u = find_u(q)
+    decomposition = decompose_p(p)
+
+    S = generate_S(decomposition, u, q)
+    G = generate_G(q)
+
+    edges = generate_edges(G,S,q,0)
+    print(len(edges))
