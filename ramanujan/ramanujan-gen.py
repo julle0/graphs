@@ -101,16 +101,6 @@ def generate_edges(G,S,q):
             explicit_E.append(((0,g_matrix),(1, (s_matrix @ g_matrix) % q)))  # operating with s onto g keeps the result in G
     return E, explicit_E
 
-def test(G, S, q):
-    for i in range(len(G)):  
-        G[i] = np.reshape(np.array(G[i]), (2,2))  # turn our list of tuples into 2x2 matrices to perform calculations
-    for s_matrix in S:
-        for g_matrix in G:
-            to_find = (s_matrix @ g_matrix) % q
-            for i in range(len(G)):
-                if np.array_equiv(to_find, G[i]):
-                    print(i)
-
 def main():
     primes = prime_finder()
     p = primes[0]
