@@ -60,15 +60,26 @@ def decompose_p(p):
     return solutions
 
 # find the elements of S
-def generate_S(solutions, u, p, q):  
-    S = []
+def generate_S(solutions, u, p, q): 
+    S = []  # before calculating the matrices, we need to find a normalisation constant to ensure that all determinants are 1 mod q 
+    n = 1
+    while np.sqrt(p % q + q*n) != int(np.sqrt(p % q + q*n)):  # look for an integer which is congruent to p mod q but also an integer when we take its square root
+        n += 1
+    norm_const = (int(np.sqrt(p % q + q*n))) % q
+    inv_norm_const = 1
+    while (norm_const*inv_norm_const) % q != 1:  # find the multiplicative inverse of this integer mod q
+        inv_norm_const += 1
     for sol in solutions:
-        v = np.zeros((2,2))
-        v[0,0] += p**(-1/2)*((sol[0] + u*sol[1]) % q)
-        v[0,1] += p**(-1/2)*((sol[2] + u*sol[3])) % q
-        v[1,0] += p**(-1/2)*((-sol[2] + u*sol[3])) % q
-        v[1,1] += p**(-1/2)*((sol[0] - u*sol[1])) % q
+        v = np.zeros((2,2))  # calculate the matrix entries which are of form
+        v[0,0] += (inv_norm_const*(sol[0] + u*sol[1])) % q  # a+ub 
+        v[0,1] += (inv_norm_const*(sol[2] + u*sol[3])) % q  # c+ud 
+        v[1,0] += (inv_norm_const*(-sol[2] + u*sol[3])) % q  # etc. where a,b,c,d come from the decomposition of p and u from find_u()
+        v[1,1] += (inv_norm_const*(sol[0] - u*sol[1])) % q
         S.append(v)
+    for v in S:  # check that all matrices have det 1 mod q to a certain tolerance since numpy creates rounding errors
+        det = np.linalg.det(v) % q
+        if abs(det-1) > 0.001:
+            raise RuntimeError(f'Something went wrong, det({v})%{q} = {np.linalg.det(v)%q}, not 1')
     return S
 
 # generate G = PSL(2, F_q)
@@ -95,11 +106,33 @@ def generate_edges(G,S,q):
     explicit_E = []
     for i in range(len(G)):  
         G[i] = np.reshape(np.array(G[i]), (2,2))  # turn our list of tuples into 2x2 matrices to perform calculations
-    for s_matrix in S:
-        for g_matrix in G:
-            E.append((g_matrix, s_matrix))  # we can safely do both in the same loop as this first append takes a fraction of the time it takes for the second
-            explicit_E.append(((0,g_matrix),(1, (s_matrix @ g_matrix) % q)))  # operating with s onto g keeps the result in G
+    for s in S:
+        for g in G:  # we can safely do both appendings in the same loop as this first append takes a fraction of the time it takes for the second
+            E.append((g, s))  # implicit format: contains all of the same information as the latter appending, but lighter
+            explicit_E.append(((0,g),(1, (s @ g) % q)))  # operating with s onto g keeps the result in G
     return E, explicit_E
+
+# generate the adjacency matrix
+def generate_adj_matrix(G, S, p, q):  # we have G and S: each g is connected to an sg which stays in G. g is a matrix, but used as a label for the vertices. 
+    n = len(G)
+    adj_matrix = np.zeros((n,n), dtype = np.int8)  # n x n matrix where each entry describes a connection between two vertices 
+    index = {g: i for i, g in enumerate(G)}  # enumerate G for a hash lookup
+    G_matrices = [np.reshape(np.array(g), (2,2)) for g in G]  # turn the tuples into matrices for calcuations
+    for s in S:  
+        for i, g in enumerate(G_matrices):  # enumerate the matrices for indexing the adjacency matrix
+            prod = (s @ g) % q  # find the label of the matrix which is connected to g
+            flat_prod = tuple(prod.flatten())  # turn the matrix into a tuple to perform upcoming min() tiebreaker since the product could land at an inverse we excluded in the construction of G
+            canonical_prod = min(flat_prod, tuple((-x)%q for x in flat_prod))  # the tiebreaker
+            j = index[canonical_prod]  # use the lookup we created earlier to find the index of the result of the product
+            adj_matrix[i,j] += 1  # add a one to [i,j] to represent a connection with the ith entry and jth entries of G
+    # MODIFY CHECK SO THAT IT CHECKS FOR ENTRIES WITH VALUE LARGER THAN ONE
+    for col_sum in adj_matrix.sum(0):  # check that all rows and columns have the proper weight
+        if col_sum != p+1:
+            raise RuntimeError(f'Something went wrong, adjacency matrix has a column with {i} entries instead of {p+1}')
+    for row_sum in adj_matrix.sum(1):
+        if row_sum != p+1:
+            raise RuntimeError(f'Something went wrong, adjacency matrix has a row with {i} entries instead of {p+1}')
+    return adj_matrix
 
 def main():
     primes = prime_finder()
@@ -112,9 +145,9 @@ def main():
 
     decomposition = decompose_p(p)
 
-    S = generate_S(decomposition, u, q)
+    S = generate_S(decomposition, u, p, q)
     G = generate_G(q)
     print(f'|S| = {len(S)} (should be p+1 = {p+1})\n|G| = {len(G)} (should be q*(q**2-1)/2 = {int(q*(q**2-1)/2)})')
 
-#    edges = generate_edges(G,S,q)
+    adj = generate_adj_matrix(G, S, p, q)
 main()
