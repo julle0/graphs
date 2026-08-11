@@ -4,6 +4,7 @@ from sympy import isprime
 from itertools import permutations, product
 import numpy as np
 import math
+from scipy.sparse.linalg import eigsh
 import time
 
 # Based on the LPS construction of Ramanujan graphs
@@ -22,7 +23,7 @@ def prime_finder():
                 isprime(q_candidate)  # q needs to also be prime but also: 
                 and q_candidate%4 == 1  # congruent to 1 mod 4
                 and pow(p, (q_candidate-1)//2, q_candidate) == 1  # p**((q-1)/2) = 1 mod q (in order for the generating set to land in PSL(2, F_q))
-                ):
+                ): 
             q_candidate += 1
         q_list.append(q_candidate)
     while True:
@@ -31,6 +32,7 @@ def prime_finder():
             print('Choice not in list, pick again.')
             continue
         else:
+            print(f'Primes found succesfully, p = {p}, q = {q}')
             return p, q
 
 # we need an integer u that satisfies u**2 = -1 mod q
@@ -39,6 +41,7 @@ def find_u(q):
         a = random.randint(2,q-1)   # pick some random integer
         u = pow(a, int((q-1)/4), q) # check if it satisfies the above condition, if not, pick another a
         if u**2 % q == q-1:
+            print(f'u found succesfully, u = {u}')
             return u
 
 # we need to find a sort of decomposition of p such that a**2 + b**2 + c**2 + d**2 = p with a > 0 and b,c,d even
@@ -57,6 +60,7 @@ def decompose_p(p):
                         perm_list[i] *= s
                     perm_list.insert(0,sol_list[0])  # insert a into the permutated list
                     solutions.append(perm_list)  # append to solutions
+    print(f'Solutions found succesfully')
     return solutions
 
 # find the elements of S
@@ -79,7 +83,10 @@ def generate_S(solutions, u, p, q):
     for v in S:  # check that all matrices have det 1 mod q to a certain tolerance since numpy creates rounding errors
         det = np.linalg.det(v) % q
         if abs(det-1) > 0.001:
-            raise RuntimeError(f'Something went wrong, det({v})%{q} = {np.linalg.det(v)%q}, not 1')
+            raise ValueError(f'Something went wrong, det({v})%{q} = {np.linalg.det(v)%q}, not 1')
+    if len(S) != p+1:
+        raise ValueError(f'Length of S != {p + 1} but {len(S)}')
+    print(f'S generated succesfully, |S| = {len(S)}')
     return S
 
 # generate G = PSL(2, F_q)
@@ -98,7 +105,11 @@ def generate_G(q):
             seen.append(tuple(digits))  # seen represents all of PSL(2, F_q) with det = 1
     for dts in seen:  # reducing the list so, that each matrix and its inverse pair gets turned into a pair of either itself or its inverse
          G.append(min(dts, tuple((-x)%q for x in dts)))  # deterministically pick either the original or the inverse, now governed by taking min() of two tuples
-    return list(set(G))  # dedupe the list so we are left with mod +-identity. this final list should have q(q^2-1)/2 elements.
+    G = list(set(G))
+    if len(G) != q*(q**2-1)/2:
+        raise ValueError(f'Length of G != {q*(q**2-1)/2} but {len(G)}')
+    print(f'G generated succesfully, |G| = {len(G)}')
+    return G  # dedupe the list so we are left with mod +-identity. this final list should have q(q^2-1)/2 elements.
 
 # generate the edges of our graph
 def generate_edges(G,S,q):
@@ -117,37 +128,55 @@ def generate_adj_matrix(G, S, p, q):  # we have G and S: each g is connected to 
     n = len(G)
     adj_matrix = np.zeros((n,n), dtype = np.int8)  # n x n matrix where each entry describes a connection between two vertices 
     index = {g: i for i, g in enumerate(G)}  # enumerate G for a hash lookup
-    G_matrices = [np.reshape(np.array(g), (2,2)) for g in G]  # turn the tuples into matrices for calcuations
+    G_matrices = [np.reshape(np.array(g), (2,2)) for g in G]  # turn the tuples into matrices for calculations
+    entry_track = []
     for s in S:  
         for i, g in enumerate(G_matrices):  # enumerate the matrices for indexing the adjacency matrix
             prod = (s @ g) % q  # find the label of the matrix which is connected to g
             flat_prod = tuple(prod.flatten())  # turn the matrix into a tuple to perform upcoming min() tiebreaker since the product could land at an inverse we excluded in the construction of G
             canonical_prod = min(flat_prod, tuple((-x)%q for x in flat_prod))  # the tiebreaker
             j = index[canonical_prod]  # use the lookup we created earlier to find the index of the result of the product
+            if adj_matrix[i,j] > 0:
+                entry_track.append((i,j))
             adj_matrix[i,j] += 1  # add a one to [i,j] to represent a connection with the ith entry and jth entries of G
-    # MODIFY CHECK SO THAT IT CHECKS FOR ENTRIES WITH VALUE LARGER THAN ONE
-    for col_sum in adj_matrix.sum(0):  # check that all rows and columns have the proper weight
-        if col_sum != p+1:
-            raise RuntimeError(f'Something went wrong, adjacency matrix has a column with {i} entries instead of {p+1}')
-    for row_sum in adj_matrix.sum(1):
-        if row_sum != p+1:
-            raise RuntimeError(f'Something went wrong, adjacency matrix has a row with {i} entries instead of {p+1}')
+    col_sums = [col_sum for col_sum in adj_matrix.sum(0)]
+    row_sums = [row_sum for row_sum in adj_matrix.sum(1)]
+    errors = []
+    if entry_track:
+        errors.append(f'Vertices connected more than once at {entry_track}')
+    if not all(c == p + 1 for c in col_sums):
+        errors.append(f'Column weight not consistently p + 1 = {p+1}: {col_sums}')
+    if not all(r == p + 1 for r in col_sums):
+        errors.append(f'Row weight not consistently p + 1 = {p+1}: {row_sums}')
+    if errors:
+        raise ValueError('\n'.join(errors))
+    print(f'Adjacency matrix generated succesfully')
     return adj_matrix
+
+def ramanujan_bound(adj_matrix, p):
+    t0 = time.time()
+    eigvals = list(eigsh(adj_matrix, k=6, which='LM', return_eigenvectors=False))
+    eigvals = [np.round(abs(x), decimals=5) for x in eigvals]
+    eigvals = [x for x in eigvals if x != p + 1]
+    bound = 2*np.sqrt(p)
+    l = max(eigvals)
+    verdict = 'is' if l <= bound else 'is not'
+    print(f'Graph {verdict} Ramanujan, lambda(X) = {l} <= {bound} = 2*sqrt(p)')
+    t1 = time.time()
+    print(t1-t0)
+    return l
 
 def main():
     primes = prime_finder()
     p = primes[0]
     q = primes[1]
-    print(f'\np = {p}\nq = {q}')
-
     u = find_u(q)
-    print(f'u = {u}')
 
     decomposition = decompose_p(p)
 
     S = generate_S(decomposition, u, p, q)
     G = generate_G(q)
-    print(f'|S| = {len(S)} (should be p+1 = {p+1})\n|G| = {len(G)} (should be q*(q**2-1)/2 = {int(q*(q**2-1)/2)})')
-
+    
     adj = generate_adj_matrix(G, S, p, q)
+    ramanujan_bound(adj,p)
 main()
