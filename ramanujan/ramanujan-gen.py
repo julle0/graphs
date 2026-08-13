@@ -64,8 +64,8 @@ def decompose_p(p):
     return solutions
 
 # find the elements of S
-def generate_S(solutions, u, p, q): 
-    S = []  # before calculating the matrices, we need to find a normalisation constant to ensure that all determinants are 1 mod q 
+def generate_S(solutions, u, p, q):
+    S = []  # before calculating the matrices, we need to find a normalisation constant to ensure that all determinants are 1 mod q
     n = 1
     while np.sqrt(p % q + q*n) != int(np.sqrt(p % q + q*n)):  # look for an integer which is congruent to p mod q but also an integer when we take its square root
         n += 1
@@ -83,7 +83,7 @@ def generate_S(solutions, u, p, q):
     for v in S:  # check that all matrices have det 1 mod q to a certain tolerance since numpy creates rounding errors
         det = np.linalg.det(v) % q
         if abs(det-1) > 0.001:
-            raise ValueError(f'Something went wrong, det({v})%{q} = {np.linalg.det(v)%q}, not 1')
+            raise ValueError(f'Something went wrong, det({v})%{q} = {det}, not 1')
     if len(S) != p+1:
         raise ValueError(f'Length of S != {p + 1} but {len(S)}')
     print(f'S generated succesfully, |S| = {len(S)}')
@@ -141,7 +141,7 @@ def generate_adj_matrix(G, S, p, q):  # we have G and S: each g is connected to 
             adj_matrix[i,j] += 1  # add a one to [i,j] to represent a connection with the ith entry and jth entries of G
     col_sums = [col_sum for col_sum in adj_matrix.sum(0)]
     row_sums = [row_sum for row_sum in adj_matrix.sum(1)]
-    errors = []
+    errors = []  # check for errors during the generation
     if entry_track:
         errors.append(f'Vertices connected more than once at {entry_track}')
     if not all(c == p + 1 for c in col_sums):
@@ -153,18 +153,20 @@ def generate_adj_matrix(G, S, p, q):  # we have G and S: each g is connected to 
     print(f'Adjacency matrix generated succesfully')
     return adj_matrix
 
-def ramanujan_bound(adj_matrix, p):
+# find out if our graph is truly Ramanujan
+def ramanujan_bound(adj_matrix, p):  # a graph is Ramanujan if its adjacency matrix's largest absolute eigenvalue distinct from abs(p+1) is smaller than 2*sqrt(p)
     t0 = time.time()
-    eigvals = list(eigsh(adj_matrix, k=6, which='LM', return_eigenvectors=False))
-    eigvals = [np.round(abs(x), decimals=5) for x in eigvals]
-    eigvals = [x for x in eigvals if x != p + 1]
+    eigvals = list(eigsh(adj_matrix, k=4, which='LM', return_eigenvectors=False))  # find the k largest eigenvalues (keep in mind odd values for k are slower for some reason)
+    eigvals = [np.round(abs(x), decimals=5) for x in eigvals]  # take absolute value and round to 5 decimals since the previous calculation introduces floating point errors
+    eigvals = [x for x in eigvals if x != p + 1]  # remove all entries equal to p+1
     bound = 2*np.sqrt(p)
     l = max(eigvals)
-    verdict = 'is' if l <= bound else 'is not'
+    verdict = 'is' if l <= bound else 'is not'  # determine if our graph is Ramanujan
     print(f'Graph {verdict} Ramanujan, lambda(X) = {l} <= {bound} = 2*sqrt(p)')
     t1 = time.time()
     print(t1-t0)
     return l
+
 
 def main():
     primes = prime_finder()
