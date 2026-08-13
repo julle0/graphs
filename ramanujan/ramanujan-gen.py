@@ -1,4 +1,3 @@
-import random
 from sympy.solvers.diophantine.diophantine import sum_of_squares
 from sympy import isprime
 from itertools import permutations, product
@@ -37,19 +36,26 @@ def prime_finder():
 
 # we need an integer u that satisfies u**2 = -1 mod q
 def find_u(q):
+    u_list = []
+    for a in range(2,q-1):
+        u_candidate = pow(a, int((q-1)/4), q)  
+        if u_candidate**2 % q == q-1 and u_candidate not in u_list:  # check if it satisfies the above condition and is not already in the list, if not, continue
+            u_list.append(u_candidate)
     while True:
-        a = random.randint(2,q-1)   # pick some random integer
-        u = pow(a, int((q-1)/4), q) # check if it satisfies the above condition, if not, pick another a
-        if u**2 % q == q-1:
-            print(f'u found succesfully, u = {u}')
-            return u
+       u = int(input(f'Pick a value for u from {u_list}: ')) 
+       if u not in u_list:
+           print('Choice not in list, pick again')
+           continue
+       else:
+           print(f'u found succesfully, u = {u}')
+           return u
 
 # we need to find a sort of decomposition of p such that a**2 + b**2 + c**2 + d**2 = p with a > 0 and b,c,d even
 def decompose_p(p):
     solutions = []
     for sol in sum_of_squares(p,4, zeros=True):  # use sympys sum_of_squares() function to find such solutions. this function only gives the non-permutated/cleaned-up solutions
         count = sum(1 for i in sol if i % 2 == 0)
-        if count == 3:  # count == 3 is the only relevant solution since p is a prime, so count == 4 is impossible
+        if count == 3:  # count == 3 is the only relevant value since p is a prime, so count == 4 is impossible
             sol_list = sorted(sol, key = lambda x: 1 - x%2) # sort by odd and even numbers, odd first for a
             for perm in set(permutations(sol_list[1:])):  # permutate the last 3 indices while keeping the first one the same since it is the odd a
                 # this sign implementation (52-57) was essentially directly copied from claude, i had no idea how to do it
@@ -155,17 +161,13 @@ def generate_adj_matrix(G, S, p, q):  # we have G and S: each g is connected to 
 
 # find out if our graph is truly Ramanujan
 def ramanujan_bound(adj_matrix, p):  # a graph is Ramanujan if its adjacency matrix's largest absolute eigenvalue distinct from abs(p+1) is smaller than 2*sqrt(p)
-    t0 = time.time()
     eigvals = list(eigsh(adj_matrix, k=4, which='LM', return_eigenvectors=False))  # find the k largest eigenvalues (keep in mind odd values for k are slower for some reason)
     eigvals = [np.round(abs(x), decimals=5) for x in eigvals]  # take absolute value and round to 5 decimals since the previous calculation introduces floating point errors
     eigvals = [x for x in eigvals if x != p + 1]  # remove all entries equal to p+1
     bound = 2*np.sqrt(p)
     l = max(eigvals)
-    verdict = 'is' if l <= bound else 'is not'  # determine if our graph is Ramanujan
-    print(f'Graph {verdict} Ramanujan, lambda(X) = {l} <= {bound} = 2*sqrt(p)')
-    t1 = time.time()
-    print(t1-t0)
-    return l
+    print('Ramanujan bound calculated succesfully')
+    return l, True if l <= bound else False
 
 
 def main():
