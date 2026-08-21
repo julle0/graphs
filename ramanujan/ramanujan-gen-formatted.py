@@ -223,8 +223,6 @@ def gen_stabilizer_matrix(h: np.array, E_horizontal: list, E_up: list, F: list, 
     rp = h.shape[1]
     if len(h) == 0:
         raise ValueError(f'Invalid h: {h}')
-    print(len(F))
-    print(len(E_horizontal))
     # Based on notes
     def f_check_incidence(f, e):
         # each f is incident to (0,g,s')
@@ -332,6 +330,7 @@ if __name__ == "__main__":
     adj = generate_adj_matrix(g_map, S, p, q)
     # If, because the calculation is immense.
     if RAMANUJAN_CHECK:
+        print("Checking if (G,S) is Ramanujan...")
         if check_ramanujan_bound(adj,p):
             pass
         else:
@@ -350,6 +349,13 @@ with adjacency dim={adj.size}
     h_prime = np.random.randint(0, 2, size=(r_div, r))
     # This part could be optimized with numba or some other
     # Python JIT-compiler. This part takes a really long time...
+    print(f'''
+Generated basis elements:
+E->  size: {len(E_horizontal)}
+E_up size: {len(E_up)}
+F    size: {len(F)}
+V    size: {len(V)}''')
+    print("Calculating stabilizer matrices H_X and dual_H_Z...")
     dual_H_Z_gen = gen_stabilizer_matrix(h, E_horizontal, E_up, F, V, prod_map)
     H_X_gen = gen_stabilizer_matrix(h_prime, E_horizontal, E_up, F, V, prod_map)
 
@@ -357,5 +363,5 @@ with adjacency dim={adj.size}
     H_X = create_stabilizer_matrix(H_X_gen)
 
     print(f'''Generated stabilizers H_Z* and H_X. |H_Z*|={dual_H_Z.size}, |H_X|={H_X.size}.\n
-Z: M_data {dual_H_Z_gen[2]}, \nN_data {dual_H_Z_gen[-1]}\n\n-------------------
+Z: M_data {dual_H_Z_gen[2]}, \nN_data {dual_H_Z_gen[-1]}\n\n-------------------\n
 X: M_data {H_X_gen[2]}, \nN_data {H_X_gen[-1]}''')
