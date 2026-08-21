@@ -1,4 +1,3 @@
-import random
 from sympy.solvers.diophantine.diophantine import sum_of_squares
 from sympy import isprime
 from itertools import permutations, product
