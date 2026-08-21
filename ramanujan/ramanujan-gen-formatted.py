@@ -6,7 +6,6 @@ import numpy as np
 import math
 from scipy.sparse.linalg import eigsh
 from scipy.sparse import coo_matrix, hstack
-from numba import njit
 RAMANUJAN_CHECK = False
 R_DIVISOR = 8
 # Based on the LPS construction of Ramanujan graphs
