@@ -5,15 +5,16 @@ from itertools import permutations, product
 import numpy as np
 import math
 from scipy.sparse.linalg import eigsh
-import sparse
+from scipy.sparse import coo_matrix, hstack
+RAMANUJAN_CHECK = False
+R_DIVISOR = 8
 # Based on the LPS construction of Ramanujan graphs
 # find two primes p and q with conditions specified below:
 def prime_finder(p_range):
-    #init_rand = random.randint(p_range[0], p_range[1])
-    init_rand = 1
+    init_rand = random.randint(p_range[0], p_range[1])
     step = 2
     p = init_rand+1 if init_rand % 2 == 0 else init_rand
-    while not (isprime(p) and p%4 == 1):
+    while not (isprime(p) and p%4 == 1 and (p+1)//R_DIVISOR!=0):
         p += step
     # Next, we will find the prime q:
     q_init = math.ceil(2*p**(1/2))
@@ -30,16 +31,25 @@ def find_u(q):
             return u
     raise RuntimeError("No such u exists.")
 
+# We need to find a decomposition of p
+# such that a**2+b**2+c**2+d**2=p, a>0, and b,c,d even.
 def decompose_p(p):
     sol = []
+    # sympy library's sum_of_squares gives
+    # the solutions we need (non-permuated/cleaned-up)
+
     for _sol in sum_of_squares(p,4,zeros=True):
         _sol = list(_sol)
         _sol_map = [i%2 for i in _sol]
         odd_count = sum(_sol_map)
+    # We need 3 even sols, 1 odd.
         if odd_count == 1:
+    # Swap places with odd sol being index 0
             for i,k in enumerate(_sol_map):
                 if k == 1:
                     _sol[0], _sol[i] = _sol[i], _sol[0]
+        # This portion generates all permutations of our
+        # even solutions, with all neg/pos possibilities.
             for perm in set(permutations(_sol[1:])):
                 nonzero_ind = [i for i,k in enumerate(perm) if k!=0]
                 for sign in product([1,-1], repeat=len(nonzero_ind)):
@@ -50,6 +60,7 @@ def decompose_p(p):
                     sol.append(perm_list)
         else:
             continue
+            # Somehow invalid solution arises.
     if len(sol) == 0: raise RuntimeError("No suitable solutions exist.")
     else: return sol
 
@@ -151,15 +162,6 @@ def generate_adj_matrix(g_map, S, p, q):
         raise RuntimeError(f'Row weight not consistently p + 1 = {p+1}: {row_sums}')
     
     return adj_matrix
-# Generate the Cayley graph (G, S) with a G-lift:
-def generate_edges(G,S,q):
-    explicit_E = []
-    # For every 0,g there exists len(S) amount of 1,sg
-    for g in G:
-        explicit_E.append([])
-        for s in S:
-            explicit_E[-1].append(((0,g), (1, (s @ g) % q)))
-    return explicit_E
 
 def check_ramanujan_bound(adj_matrix, p):
     eigvals = list(eigsh(adj_matrix, k=4, which='LM', return_eigenvectors=False))
@@ -168,34 +170,18 @@ def check_ramanujan_bound(adj_matrix, p):
     max_eigval = max(eigvals)
     return True if max_eigval <= 2*np.sqrt(p) else False
 
-def generate_adjanency(g_map, explicit_edges, adj, q):
-    print(explicit_edges[1][1][1])
-    # Associate some bit with some edge, and
-    # parity check matrix for each vertex.
-    w = sum(adj[0])
-    r = w//8 # From notes
-    # Random local parity check matrix
-    h = np.random.randint(0, 2, size=(r,w))
-    # For each vertex, the sum of the edges has to be 0
-    # Firstly we need to form subsets of edges, per vertex
-    # Data structure for Cayley: ((0,g), (1,sg))
-    vertex_set = {g_id: [] for g_id in g_map.keys()}
-    for i in explicit_edges:
-        vertex_set[create_hash(explicit_edges[1][1][1], q)]
-    print(vertex_set)
-
-def lifted_product_shuffle(g_map, s_map, prod_map):
-    r = len(s_map)
+def lifted_product_shuffle(g_map, s_map):
+    r = len(s_map)//R_DIVISOR
     # Generate E>, E^, F and V which belong to gamma.
-    E_vertical, E_up, F, V = [], [], [], []
+    E_horizontal, E_up, F, V = [], [], [], []
     v1, v2 = 0, 1
     # Shuffle shuffle
-    for g in g_map:
-        for s in s_map:
-            E_vertical.append([s,g,v1])
-            E_vertical.append([s,g,v2])
+    for g in g_map.keys():
+        for s in s_map.keys():
+            E_horizontal.append([s,g,v1])
+            E_horizontal.append([s,g,v2])
 
-            E_up.append([v1, g, s])
+            E_up.append([v1,g,s])
             E_up.append([v2,g,s])
 
             for s_prime in s_map:
@@ -204,95 +190,175 @@ def lifted_product_shuffle(g_map, s_map, prod_map):
                 #else: F.append((s,g,s_prime))
                 F.append((s,g,s_prime))
 
-            V.append([v1,g,v2])
-            V.append([v2,g,v1])
+        V.append([v1,g,v2])
+        V.append([v2,g,v1])
 
-    r_range_list =[i for i in range(r)]
-    perms = []
+    r_range_list = [i for i in range(r)]
+    # Augment our elements to their index basis.
+    # E_horizontal x r, E_up x r, V x r x r''
+    E_horizontal_aug = []
+    E_up_aug = []
+    V_aug = []
+    for e in E_horizontal:
+        for i in range(r):
+            E_horizontal_aug.append([
+                e[0], e[1], e[2], i])
 
-    for i in range(r):
-        for k in range(r):
-            perms.append([i,k])
-    size_perms = len(perms)
-    size_E_V = len(E_vertical)
-    # E_vertical, E_up and V have the same size
-    size_F = len(F)
-    for k in range(size_E_V):
-        r_mod = k % r
-        perms_mod = k % size_perms
-        E_vertical[k].append(r_range_list[r_mod])
-        E_up[k].append(r_range_list[r_mod])
-        V[k].append(perms[perms_mod])
+    for e in E_up:
+        for i in range(r):
+            E_up_aug.append([
+                e[0], e[1], e[2], i])
 
-    return E_vertical, E_up, F, V
-# TARKISTA ONKO OIKEIN LMAO
-def calc_stabilizer(h, E_vertical, E_up, F, V):
-    r = len(s_map)
-    print("h: ",h,"\nh_prime: ", h_prime)
-    # Our Matrix M has the dimensions len(F), len(E_vertical)
+    for v in V:
+        for i in range(r):
+            for j in range(r):
+                V_aug.append([
+                    v[0], v[1], v[2], i,j])
+
+    return E_horizontal_aug, E_up_aug, F, V_aug
+
+def gen_stabilizer_matrix(h: np.array, E_horizontal: list, E_up: list, F: list, V: list, prod_map: dict) -> tuple:
+    r = h.shape[0]
+    rp = h.shape[1]
+    if len(h) == 0:
+        raise ValueError(f'Invalid h: {h}')
     print(len(F))
-    print(len(E_vertical))
-    def check_incidence(a, b):
-        for i,x in enumerate(a):
-            if x == b[i]
-                return True
-        return False
-    # Cannot do calculations with M, N (out of RAM)
-    M = np.zeros(shape=(len(F), len(E_vertical)), dtype=np.uint8)
-    N = np.zeros(shape=(len(E_vertical, len(V))), dtype=np.uint8)
+    print(len(E_horizontal))
+    # Based on notes
+    def f_check_incidence(f, e):
+        # each f is incident to (0,g,s')
+        # and (1, sg, s')
+        #print(f,e)
+        s = f[0]
+        g = f[1]
+        s_prime = f[2]
+        if e[2] != s_prime:
+            return False
+        elif e[0] == 0:
+            return e[1] == g
+        elif e[0] == 1:
+            return e[1] == prod_map[(s, g)]
+        else:
+            return False
+
+    def v_check_incidence(v,e):
+        s = e[0]
+        g = e[1]
+        v_e = e[2]
+        if v[2] != v_e:
+            print("Wrong1")
+            return False
+        elif v[0] == 0:
+            return v[1] == g
+        elif v[0] == 1:
+            return v[1] == prod_map[(s, g)]
+        else: return False
+
+    # The sizes of M,N are really big.
+    # We thus compress a bit, using coo_matrix
+    # (check create_stabilizer_matrix func)
+    M_rows = []
+    M_cols = []
+    M_data = []
+    N_rows = []
+    N_cols = []
+    N_data = []
+    #M = np.zeros(shape=(len(F), len(E_horizontal)), dtype=np.uint8)
+    #N = np.zeros(shape=(len(E_horizontal, len(V))), dtype=np.uint8)
     # Generate M:
-    for i, e in enumerate(E_vertical):
+    for edge_id, e in enumerate(E_up):
+        i = e[-1]
         j = 0
-        incidence = False
-        for j,f in enumerate(F):
-            if check_incidence(f,e):
-                incidence = True
-                break
-            else:
-                continue
-        if h[i,j] == 1 and incidence:
-            M[i,j] += 1
+        for face_id, f in enumerate(F):
+            if f_check_incidence(f,e):
+                if j>=rp:
+                    # Just incase
+                    break
+                if h[i,j] == 1:
+    # (e->,i) has to be row-major flattened (2d->1d mapping)
+                    M_rows.append(edge_id*r+i)
+                    M_cols.append(face_id)
+                    M_data.append(1)
+                j += 1
+    print("M_data:", len(M_data))
     # Generate N:
-    for i,v in enumerate(V)
+    for vertex_id, v in enumerate(V):
         j = 0
-        incidence = False
-        for j, e in enumerate(E_vertical):
-            if check_incidence(e,v)
-                incidence = True
-                break
-            else:
-                continue
-        if (h[i,j] == 1) and incidence and (j=v[-1]):
-            N[i,j] += 1
-    return np.array([np.transpose(M), N])
+        # V basis is (v..., a, b) -> b=k
+        k = v[-1]
+        i = v[-2]
+        for edge_id, e in enumerate(E_horizontal):
+        # E-> basis is (e, c) -> should be c=l
+            l = e[-1]
+            if v_check_incidence(v,e):
+                if j>=rp:
+                    break
 
+                if h[i,j] == 1 and (k == l):
+                    # 3d -> 1d mapping
+                    N_rows.append(vertex_id*(r*rp)+i*rp+k)
+                    N_cols.append(edge_id*rp+l)
+                    N_data.append(1)
+                j += 1
+    print("N_data:", len(N_data))
+
+    return (M_rows, M_cols, M_data, N_rows, N_cols, N_data)
+
+def create_stabilizer_matrix(M_rows, M_cols, M_data, N_rows, N_cols, N_data):
+    M_sparse = coo_matrix((M_data, (M_rows, M_cols)),
+                      shape=(len(E_horizontal) * r, len(F)))
+    N_sparse = coo_matrix((N_data, (N_rows, N_cols)),
+                      shape=(len(V) * r, len(E_vertical)))
+    stabilizer = hstack([M_sparse.T, N_sparse])
+    return stabilizer
 if __name__ == "__main__":
-    primes = prime_finder([0, 50])
-    p = primes[0]
-    q = primes[1]
+    search_range_max =  int(input("Max value for semi-random p: "))
+    while True:
+        primes = prime_finder([0, search_range_max])
+        p = primes[0]
+        q = primes[1]
+        if (p+1//8) != 0:
+            break
     u = find_u(q)
-    print(f"p,q,u: {p}, {q}, {u}")
+    print(f"Intial values p,q,u: {p}, {q}, {u}")
     decomposition = decompose_p(p)
-
+    print("Generating (G,S) pair, and their mappings...")
     S = generate_S(decomposition, u, p, q)
     G = generate_G(q)
-    print(len(G), len(S))
     s_map = {create_hash(s,q): i for i, s in enumerate(S)}
     g_map = {create_hash(g,q): i for i, g in enumerate(G)}
-
+    prod_map = {} # Needed in the incidence checking
+    for s in S:
+        for g in G:
+            prod_map[(create_hash(s, q), create_hash(g, q))] = create_hash(s @ g, q)
+    print("Generating adjacency matrix...")
     adj = generate_adj_matrix(g_map, S, p, q)
+    # If, because the calculation is immense.
+    if RAMANUJAN_CHECK:
+        if check_ramanujan_bound(adj,p):
+            pass
+        else:
+            raise RuntimeError("(G,S) pair is not Ramanujan.")
     print(
 f'''Ramanujan (G,S) created, |G|={len(G)}, |S|={len(S)}
 with adjacency dim={adj.size}
 ''')
-    #IS_RAMANUJAN = check_ramanujan_bound(adj,p)
-    #print(IS_RAMANUJAN)
     # We have now succeeded in creating a Ramanujan graph
     # We shall now create the qLDPC of 2 distinct Tanner graphs
     # And combine these 2 with a lifted-product.
-    explicit_edges = generate_edges(G, S, q)
-    E_vertical, E_up, F, V = lifted_product_shuffle(g_map, s_map, prod_map)
-    h = np.random.randint(0,2, size=(r//8, r))
-    h_prime = np.random.randint(0, 2, size=(r//8, r))
-    dual_H_Z = calc_stabilizer(h, E_vertical, E_up, F, V, g_map, s_map, G, S)
-    H_X = calc_stabilizer(h_prime, E_vertical, E_up, F, V, g_map, s_map, G, S)
+    E_horizontal, E_up, F, V = lifted_product_shuffle(g_map, s_map)
+    r = p+1
+    r_div =r//R_DIVISOR
+    h = np.random.randint(0,2, size=(r_div, r))
+    h_prime = np.random.randint(0, 2, size=(r_div, r))
+    # This part could be optimized with numba or some other
+    # Python JIT-compiler. This part takes a really long time...
+    dual_H_Z_gen = gen_stabilizer_matrix(h, E_horizontal, E_up, F, V, prod_map)
+    H_X_gen = gen_stabilizer_matrix(h_prime, E_horizontal, E_up, F, V, prod_map)
+
+    dual_H_Z = create_stabilizer_matrix(dual_H_Z_gen)
+    H_X = create_stabilizer_matrix(H_X_gen)
+
+    print(f'''Generated stabilizers H_Z* and H_X. |H_Z*|={dual_H_Z.size}, |H_X|={H_X.size}.\n
+Z: M_data {dual_H_Z_gen[2]}, \nN_data {dual_H_Z_gen[-1]}\n\n-------------------
+X: M_data {H_X_gen[2]}, \nN_data {H_X_gen[-1]}''')
