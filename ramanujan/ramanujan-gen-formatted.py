@@ -6,6 +6,7 @@ import numpy as np
 import math
 from scipy.sparse.linalg import eigsh
 from scipy.sparse import coo_matrix, hstack
+from numba import njit
 RAMANUJAN_CHECK = False
 R_DIVISOR = 8
 # Based on the LPS construction of Ramanujan graphs
@@ -246,7 +247,6 @@ def gen_stabilizer_matrix(h: np.array, E_horizontal: list, E_up: list, F: list, 
         g = e[1]
         v_e = e[2]
         if v[2] != v_e:
-            print("Wrong1")
             return False
         elif v[0] == 0:
             return v[1] == g
@@ -294,7 +294,7 @@ def gen_stabilizer_matrix(h: np.array, E_horizontal: list, E_up: list, F: list, 
                 if j>=rp:
                     break
 
-                if h[i,j] == 1 and (k == l):
+                if h[i,j] == 1 and k == l:
                     # 3d -> 1d mapping
                     N_rows.append(vertex_id*(r*rp)+i*rp+k)
                     N_cols.append(edge_id*rp+l)
@@ -313,12 +313,9 @@ def create_stabilizer_matrix(M_rows, M_cols, M_data, N_rows, N_cols, N_data):
     return stabilizer
 if __name__ == "__main__":
     search_range_max =  int(input("Max value for semi-random p: "))
-    while True:
-        primes = prime_finder([0, search_range_max])
-        p = primes[0]
-        q = primes[1]
-        if (p+1//8) != 0:
-            break
+    primes = prime_finder([0, search_range_max])
+    p = primes[0]
+    q = primes[1]
     u = find_u(q)
     print(f"Intial values p,q,u: {p}, {q}, {u}")
     decomposition = decompose_p(p)
