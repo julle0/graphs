@@ -3,6 +3,7 @@ from sympy import isprime
 from itertools import permutations, product
 import numpy as np
 import math
+import random
 from scipy.sparse.linalg import eigsh
 from scipy.sparse import coo_matrix, hstack
 RAMANUJAN_CHECK = False
